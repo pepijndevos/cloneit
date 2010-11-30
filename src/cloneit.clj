@@ -1,6 +1,13 @@
 (ns cloneit
-  (:gen-class)
-  (:use    compojure clojure.contrib.duck-streams)
+  ;(:gen-class)
+  (:use
+     compojure.core
+     hiccup.core
+     hiccup.page-helpers
+     hiccup.form-helpers
+     ring.util.response
+     ring.adapter.jetty
+     ring.middleware.session)
   (:import (org.joda.time DateTime Duration Period)))
 
 (defmacro this-file [] (str "src/" *file*))
@@ -41,7 +48,7 @@
     body]))
 
 (defn add-link [session [title url]]
-  (redirect-to
+  (redirect
    (cond
     (invalid-url? url) "/new/?msg=Invalid URL"
     (empty? title)     "/new/?msg=Invalid Title"
@@ -74,7 +81,7 @@
     (link-to "/" "Home")))
 
 (defn add-user [session-id [email user password]]
-  (redirect-to
+  (redirect
    (cond
     (invalid-email? email) "/register/?msg=Invalid email"
     :else
@@ -99,7 +106,7 @@
 	     (submit-button "Sign up"))))
 
 (defn login-user [session [email password]]
-  (redirect-to 
+  (redirect 
    (if-let [user (@users email)]
      (if (= password (:password user))
        (dosync
@@ -111,7 +118,7 @@
 (defn logout-user [{:keys [id]}]
   (dosync
    (alter online-users dissoc id))
-  (redirect-to "/"))
+  (redirect "/"))
 
 (defn login-form [session msg]
   (with-head session "Reddit.Clojure - Login screen"   
@@ -137,24 +144,47 @@
 (defn rate [url mfn]
   (dosync
    (when (@data url) (alter data update-in [url :points] mfn)))
-  (redirect-to "/"))
+  (redirect "/"))
 
 (defroutes reddit
-  (GET  "/"           (reddit-home session))
-  (GET  "/new/*"      (if (@online-users (:id session))
-			(reddit-new-link session (:msg params))
-			(redirect-to "/register/")))
-  (POST "/new/"       (add-link     session (pick params :title :url)))
-  (GET  "/up/*"       (rate         (:* params) inc))
-  (GET  "/down/*"     (rate         (:* params) dec))
-  (GET  "/login/*"    (login-form   session (pick params :msg)))
-  (POST "/login/"     (login-user   session (pick params :email :psw)))
-  (GET  "/logout/"    (logout-user  session))
-  (GET  "/register/*" (registration-form session (:msg params)))
-  (POST "/register/"  (add-user (:id session)
-				(pick params :Email :Username :Password)))
-  (GET  "/styles/*"   (serve-file "res/" (params :*)))
-  (ANY  "*"  404))
+  (GET "/"
+       {session :session}
+       (reddit-home session))
+  (GET "/new/*"
+       {{:strs [id] :as session} :session {:strs [msg]} :params}
+       (if (@online-users id)
+         (reddit-new-link session msg)
+         (redirect "/register/")))
+  (POST "/new/"
+        {session :session {:strs [title url]} :params}
+        (add-link session [title url]))
+  (GET "/up/*"
+       {{wild "*"} :params}
+       (rate wild inc))
+  (GET "/down/*"
+       {{wild "*"} :params}
+       (rate wild dec))
+  (GET "/login/*"
+       {session :session {:strs [msg]} :params}
+       (login-form session msg))
+  (POST "/login/"
+        {session :session {:strs [email psw]} :params}
+        (login-user session [email psw]))
+  (GET "/logout/"
+       {session :session}
+       (logout-user  session))
+  (GET "/register/*"
+       {session :session {:strs [msg]} :params}
+       (registration-form session msg))
+  (POST "/register/"
+        {{:strs [id]} :session {:strs [Email Username Password]} :params}
+        (add-user id [Email Username Password]))
+  (GET "/styles/*"
+       {{wild "*"}:params}
+       (file-response (str "res/" wild)))
+  (ANY "*" [] 404))
 
-(defn -main [& args]
-  (run-server {:port 8080} "/*" (->> reddit with-session servlet)))
+(comment (defn -main [& args]
+  (run-server {:port 8080} "/*" (->> reddit wrap-session servlet))))
+
+(run-jetty (wrap-session reddit) {:port 8080})
