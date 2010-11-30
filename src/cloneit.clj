@@ -7,13 +7,11 @@
      hiccup.form-helpers
      ring.util.response
      ring.adapter.jetty
-     ring.middleware.session)
+     ring.middleware.session
+     cloneit.data)
   (:import (org.joda.time DateTime Duration Period)))
 
 (defmacro this-file [] (str "src/" *file*))
-(def data  (ref {"http://www.bestinclass.dk" {:title "Best in Class" :points 1 :date (DateTime.) :poster "LauJensen"}}))
-(def users (ref {"lau.jensen@bestinclass.dk" {:username "LauJensen" :password "way2secret"}}))
-(def online-users (ref {}))
 
 (def formatter
      (.toPrinter (doto (org.joda.time.format.PeriodFormatterBuilder.)
@@ -60,7 +58,7 @@
      "/"))))
 
 (defn render-links [keyfn cmp]
-  (for [link (sort-by keyfn cmp @data)]
+  (for [link (take 20 (sort-by keyfn cmp @data))]
     (let [[url {:keys [title points date poster]}] link]
       [:li
        (link-to url title)
@@ -139,7 +137,7 @@
     [:h1 "Highest ranking list"]
     [:ol (render-links #(:points (val %))  >)]
     [:h1 "Latest link"]  
-    [:ol (render-links #(.getMillis (Duration. (:date (val %)) (DateTime.))) >)]))
+    [:ol (render-links #(.getMillis (Duration. (:date (val %)) (DateTime.))) <)]))
 
 (defn rate [url mfn]
   (dosync
